@@ -44,7 +44,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-@Path("/databases/{databaseName}/queries")
+@Path("/queries/{databaseName}")
 public class QueryResource {
 
   private static final Log LOG = LogFactory.getLog(QueryResource.class);
