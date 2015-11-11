@@ -24,6 +24,7 @@ import org.apache.tajo.catalog.Schema;
 import org.apache.tajo.catalog.TableDesc;
 import org.apache.tajo.exception.TajoException;
 import org.apache.tajo.ipc.ClientProtos.SerializedResultSet;
+import org.apache.tajo.storage.Tuple;
 
 import java.io.IOException;
 import java.util.List;
@@ -34,6 +35,7 @@ public interface NonForwardQueryResultScanner {
 
   Schema getLogicalSchema();
 
+  List<Tuple> getNextTupleRows(int fetchRowNum) throws IOException;
   @Deprecated
   List<ByteString> getNextRows(int fetchRowNum) throws IOException;
 

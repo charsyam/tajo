@@ -263,12 +263,10 @@ public class TestQueryResultResource extends QueryTestCaseBase {
         .get();
 
     assertNotNull(queryResultSetResponse);
-    String tajoDigest = queryResultSetResponse.getHeaderString(tajoDigestHeaderName);
     int offset = Integer.valueOf(queryResultSetResponse.getHeaderString(tajoOffsetHeaderName));
     int count = Integer.valueOf(queryResultSetResponse.getHeaderString(tajoCountHeaderName));
     boolean eos = Boolean.valueOf(queryResultSetResponse.getHeaderString(tajoEOSHeaderName));
 
-    assertTrue(tajoDigest != null && !tajoDigest.isEmpty());
     assertTrue(eos);
     assertEquals(0, offset);
     assertEquals(5, count);
@@ -281,7 +279,6 @@ public class TestQueryResultResource extends QueryTestCaseBase {
     boolean isFinished = false;
     List<Tuple> tupleList = TUtil.newList();
     RowStoreUtil.RowStoreDecoder decoder = RowStoreUtil.createDecoder(response.getSchema());
-    MessageDigest messageDigest = MessageDigest.getInstance("SHA-1");
     while (!isFinished) {
       try {
         int length = queryResultSetInputStream.readInt();
@@ -291,17 +288,65 @@ public class TestQueryResultResource extends QueryTestCaseBase {
         assertEquals(length, readBytes);
 
         tupleList.add(decoder.toTuple(dataByteArray));
-        messageDigest.update(dataByteArray);
       } catch (EOFException eof) {
         isFinished = true;
       }
     }
 
     assertEquals(5, tupleList.size());
-    assertEquals(tajoDigest, Base64.encodeBase64String(messageDigest.digest()));
 
     for (Tuple aTuple: tupleList) {
       assertTrue(aTuple.getInt4(response.getSchema().getColumnId("l_orderkey")) > 0);
     }
   }
+
+  @Test
+  public void testGetQueryResultSetWithDefaultCountWithCSV() throws Exception {
+    String sessionId = generateNewSessionAndGetId();
+    URI queryIdURI = sendNewQueryResquest(sessionId, "select * from lineitem");
+    URI queryResultURI = new URI(queryIdURI + "/result");
+
+    GetQueryResultDataResponse response = restClient.target(queryResultURI)
+            .request().header(tajoSessionIdHeaderName, sessionId)
+            .get(new GenericType<>(GetQueryResultDataResponse.class));
+
+    assertNotNull(response);
+    assertNotNull(response.getResultCode());
+    assertTrue(isOk(response.getResultCode()));
+    assertNotNull(response.getSchema());
+    assertEquals(16, response.getSchema().getRootColumns().size());
+    assertNotNull(response.getResultset());
+    assertTrue(response.getResultset().getId() != 0);
+    assertNotNull(response.getResultset().getLink());
+
+    URI queryResultSetURI = response.getResultset().getLink();
+
+    Response queryResultSetResponse = restClient.target(queryResultSetURI)
+            .queryParam("type", "csv")
+            .request().header(tajoSessionIdHeaderName, sessionId)
+            .get();
+
+    assertNotNull(queryResultSetResponse);
+    int offset = Integer.valueOf(queryResultSetResponse.getHeaderString(tajoOffsetHeaderName));
+    int count = Integer.valueOf(queryResultSetResponse.getHeaderString(tajoCountHeaderName));
+    int contentLength = Integer.valueOf(queryResultSetResponse.getHeaderString("Content-Length"));
+    boolean eos = Boolean.valueOf(queryResultSetResponse.getHeaderString(tajoEOSHeaderName));
+
+    assertTrue(eos);
+    assertEquals(0, offset);
+    assertEquals(5, count);
+
+    DataInputStream queryResultSetInputStream =
+            new DataInputStream(new BufferedInputStream(queryResultSetResponse.readEntity(InputStream.class)));
+
+    assertNotNull(queryResultSetInputStream);
+
+    boolean isFinished = false;
+    List<Tuple> tupleList = TUtil.newList();
+    byte[] dataByteArray = new byte[contentLength];
+    int readBytes = queryResultSetInputStream.read(dataByteArray);
+    assertEquals(contentLength, readBytes);
+    System.out.println(new String(dataByteArray));
+  }
+
 }

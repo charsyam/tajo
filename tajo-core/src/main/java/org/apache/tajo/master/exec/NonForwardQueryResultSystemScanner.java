@@ -590,6 +590,38 @@ public class NonForwardQueryResultSystemScanner implements NonForwardQueryResult
   }
 
   @Override
+  public List<Tuple> getNextTupleRows(int fetchRowNum) throws IOException {
+    List<Tuple> rows = new ArrayList<>();
+    int startRow = currentRow;
+    int endRow = startRow + fetchRowNum;
+
+    if (physicalExec == null) {
+      return rows;
+    }
+
+    while (currentRow < endRow) {
+      Tuple currentTuple = physicalExec.next();
+
+      if (currentTuple == null) {
+        physicalExec.close();
+        physicalExec = null;
+        break;
+      }
+
+      currentRow++;
+      rows.add(currentTuple);
+
+      if (currentRow >= maxRow) {
+        physicalExec.close();
+        physicalExec = null;
+        break;
+      }
+    }
+
+    return rows;
+  }
+
+  @Override
   public List<ByteString> getNextRows(int fetchRowNum) throws IOException {
     List<ByteString> rows = new ArrayList<>();
     int startRow = currentRow;

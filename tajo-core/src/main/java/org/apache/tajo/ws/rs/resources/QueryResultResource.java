@@ -68,10 +68,12 @@ public class QueryResultResource {
   private static final String cacheIdKeyName = "cacheId";
   private static final String offsetKeyName = "offset";
   private static final String countKeyName = "count";
+  private static final String typeKeyName = "type";
 
   private static final String tajoDigestHeaderName = "X-Tajo-Digest";
   private static final String tajoOffsetHeaderName = "X-Tajo-Offset";
   private static final String tajoCountHeaderName = "X-Tajo-Count";
+  private static final String tajoContentLengthHeaderName = "Content-Length";
   private static final String tajoEOSHeaderName = "X-Tajo-EOS";
 
   public UriInfo getUriInfo() {
@@ -252,6 +254,7 @@ public class QueryResultResource {
   @Produces(MediaType.APPLICATION_OCTET_STREAM)
   public Response getQueryResultSet(@HeaderParam(QueryResource.tajoSessionIdHeaderName) String sessionId,
       @PathParam("cacheId") String cacheId,
+      @DefaultValue("bin") @QueryParam("type") String type,
       @DefaultValue("100") @QueryParam("count") int count) {
     if (LOG.isDebugEnabled()) {
       LOG.debug("Client sent a get query result set request.");
@@ -275,7 +278,10 @@ public class QueryResultResource {
       JerseyResourceDelegateContextKey<Integer> countKey =
           JerseyResourceDelegateContextKey.valueOf(countKeyName, Integer.class);
       context.put(countKey, count);
-      
+      JerseyResourceDelegateContextKey<String> typeKey =
+              JerseyResourceDelegateContextKey.valueOf(typeKeyName, String.class);
+      context.put(typeKey, type);
+
       response = JerseyResourceDelegateUtil.runJerseyResourceDelegate(
           new GetQueryResultSetDelegate(),
           application,
@@ -309,7 +315,10 @@ public class QueryResultResource {
       JerseyResourceDelegateContextKey<Integer> countKey =
           JerseyResourceDelegateContextKey.valueOf(countKeyName, Integer.class);
       int count = context.get(countKey);
-      
+      JerseyResourceDelegateContextKey<String> typeKey =
+              JerseyResourceDelegateContextKey.valueOf(typeKeyName, String.class);
+      String type = context.get(typeKey);
+
       if (sessionId == null || sessionId.isEmpty()) {
         return ResourcesUtil.createBadRequestResponse(LOG, "Session id is required. Please refer the header " + 
             QueryResource.tajoSessionIdHeaderName);
@@ -339,21 +348,17 @@ public class QueryResultResource {
 
       try {
         int start_offset = cachedQueryResultScanner.getCurrentRowNumber();
-        List<ByteString> output = cachedQueryResultScanner.getNextRows(count);
-        String digestString = getEncodedBase64DigestString(output);
-        boolean eos = count != output.size();
+        RestOutputFactory.RestStreamingOutput restStreamingOutput = RestOutputFactory.getStreamingOutput(type, cachedQueryResultScanner, count);
+        int outputSize = restStreamingOutput.count();
+        boolean eos = count != outputSize;
 
-        return Response.ok(new QueryResultStreamingOutput(output))
-          .header(tajoDigestHeaderName, digestString)
+        return Response.ok(restStreamingOutput)
           .header(tajoOffsetHeaderName, start_offset)
-          .header(tajoCountHeaderName, output.size())
+          .header(tajoCountHeaderName, outputSize)
           .header(tajoEOSHeaderName, eos)
+          .header(tajoContentLengthHeaderName, restStreamingOutput.length())
           .build();
       } catch (IOException e) {
-        LOG.error(e.getMessage(), e);
-
-        return ResourcesUtil.createExceptionResponse(null, e.getMessage());
-      } catch (NoSuchAlgorithmException e) {
         LOG.error(e.getMessage(), e);
 
         return ResourcesUtil.createExceptionResponse(null, e.getMessage());
